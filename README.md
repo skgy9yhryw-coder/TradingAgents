@@ -459,3 +459,33 @@ market price has been independently verified. The example above demonstrates
 the API; it is not a market signal or a recommendation. Open trades are excluded
 from win-rate calculations until closed. The database is local to the machine
 running the application and is not automatically synced to GitHub.
+
+### Independent consensus gate (paper-trading preparation)
+
+The graph now places a fail-closed consensus gate after the Portfolio Manager. It requests
+independent structured direction votes from Anthropic Claude, xAI Grok, and DeepSeek.
+All three must return the same explicit direction, and the Portfolio Manager's direction
+must agree. A ChatGPT-plan reviewer is then asked for a veto-only review: it can reject
+the setup but cannot change the direction. Any missing model ID, missing credentials,
+provider error, malformed response, disagreement, or judge failure results in
+`NO TRADE` / `REVIEW`.
+
+Configure model IDs in the local environment (never commit API keys):
+
+```bash
+export TRADINGAGENTS_CONSENSUS_CLAUDE_MODEL="<your-enabled-Claude-model-id>"
+export TRADINGAGENTS_CONSENSUS_GROK_MODEL="<your-enabled-Grok-model-id>"
+export TRADINGAGENTS_CONSENSUS_DEEPSEEK_MODEL="<your-enabled-DeepSeek-model-id>"
+export TRADINGAGENTS_CONSENSUS_JUDGE_MODEL="<your-ChatGPT-plan-model-id>"
+```
+
+Provider credentials must be available in the local runtime using the standard variables
+(`ANTHROPIC_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`) and ChatGPT plan authentication
+must already be configured for the local runtime. A ChatGPT subscription in the web app
+does not automatically authenticate a separate computer or server. Do not paste secrets
+into GitHub or chat.
+
+This gate does not fetch or validate a live quote and does not open paper trades
+automatically. It only produces an audited consensus decision. Keep the system in
+paper/research mode until market-data freshness, instrument mapping, tests, and paper
+execution accounting have been validated.
