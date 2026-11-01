@@ -1,5 +1,3 @@
-import pytest
-
 from tradingagents.agents import consensus_gate
 from tradingagents.agents.consensus_gate import DirectionVote, JudgeReview, create_consensus_node
 
