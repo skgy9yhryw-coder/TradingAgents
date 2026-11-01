@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tradingagents.consensus import MODEL_NAMES, evaluate_consensus
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -124,6 +126,49 @@ class PaperTradeLedger:
                 ),
             )
         return trade_id
+
+    def open_consensus_trade(
+        self,
+        *,
+        symbol: str,
+        direction: str,
+        quantity: float,
+        entry_price: float,
+        model_votes: dict[str, str | None],
+        judge_approved: bool,
+        judge_rationale: str = "",
+        **trade_metadata: Any,
+    ) -> str:
+        """Open a paper trade only after strict 3/3 direction and judge approval.
+
+        This is a paper-ledger gate, not a substitute for market-data validation.
+        The caller remains responsible for supplying a current, verified quote.
+        """
+        result = evaluate_consensus(model_votes)
+        requested = "bullish" if direction.strip().lower() in {"long", "bullish", "buy"} else (
+            "bearish" if direction.strip().lower() in {"short", "bearish", "sell"} else None
+        )
+        if not result.approved or result.direction != requested:
+            raise ValueError("paper entry blocked: the three model votes are not unanimous for this direction")
+        if not judge_approved:
+            raise ValueError("paper entry blocked: ChatGPT judge approval is required")
+        normalized_votes = {name: model_votes.get(name) for name in MODEL_NAMES}
+        return self.open_trade(
+            symbol=symbol,
+            direction="long" if requested == "bullish" else "short",
+            quantity=quantity,
+            entry_price=entry_price,
+            model_votes=normalized_votes,
+            judge_approved=True,
+            metadata={
+                **(trade_metadata.pop("metadata", {}) or {}),
+                "consensus_direction": result.direction,
+                "consensus_reason": result.reason,
+                "judge_rationale": judge_rationale,
+                "approval_gate": "3_of_3_plus_judge",
+            },
+            **trade_metadata,
+        )
 
     def close_trade(self, trade_id: str, *, exit_price: float, fees: float = 0) -> dict[str, Any]:
         """Close a paper trade and calculate net P&L after supplied fees."""
