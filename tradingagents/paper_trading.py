@@ -6,6 +6,7 @@ separate from live execution and uses only the Python standard library.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ def _utc_now() -> str:
 
 def _positive_number(value: float, field: str) -> float:
     number = float(value)
-    if number <= 0:
+    if not math.isfinite(number) or number <= 0:
         raise ValueError(f"{field} must be greater than zero")
     return number
 
@@ -145,10 +146,12 @@ class PaperTradeLedger:
         The caller remains responsible for supplying a current, verified quote.
         """
         result = evaluate_consensus(model_votes)
-        requested = "bullish" if direction.strip().lower() in {"long", "bullish", "buy"} else (
-            "bearish" if direction.strip().lower() in {"short", "bearish", "sell"} else None
+        normalized_direction = direction.strip().lower() if isinstance(direction, str) else ""
+        requested = (
+            "bullish" if normalized_direction in {"long", "bullish", "buy"} else
+            "bearish" if normalized_direction in {"short", "bearish", "sell"} else None
         )
-        if not result.approved or result.direction != requested:
+        if requested is None or not result.approved or result.direction != requested:
             raise ValueError("paper entry blocked: the three model votes are not unanimous for this direction")
         if not judge_approved:
             raise ValueError("paper entry blocked: ChatGPT judge approval is required")
@@ -174,7 +177,7 @@ class PaperTradeLedger:
         """Close a paper trade and calculate net P&L after supplied fees."""
         exit_price = _positive_number(exit_price, "exit_price")
         fees = float(fees)
-        if fees < 0:
+        if not math.isfinite(fees) or fees < 0:
             raise ValueError("fees cannot be negative")
         with self._connect() as connection:
             row = connection.execute(
