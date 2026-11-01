@@ -60,7 +60,7 @@ def create_consensus_node(config: dict):
                 structured = llm.with_structured_output(DirectionVote)
                 result = structured.invoke([
                     ("system", "Independently assess the supplied market analysis. Return exactly one direction: bullish, bearish, or neutral. Do not infer missing evidence. This is not an order."),
-                    ("human", f"Instrument: {state.get('company_of_interest', '')}\\nAsset type: {state.get('asset_type', '')}\\nTrade date: {state.get('trade_date', '')}\\nInstrument context: {state.get('instrument_context', '')}\\nMarket report: {state.get('market_report', '')}\\nNews report: {state.get('news_report', '')}\\nSentiment report: {state.get('sentiment_report', '')}\\nFundamentals report: {state.get('fundamentals_report', '')}\\nTrader proposal: {state.get('trader_investment_plan', '')}\\nPortfolio decision: {pm_decision}"),
+                    ("human", f"Instrument: {state.get('company_of_interest', '')}\nAsset type: {state.get('asset_type', '')}\nTrade date: {state.get('trade_date', '')}\nInstrument context: {state.get('instrument_context', '')}\nMarket report: {state.get('market_report', '')}\nNews report: {state.get('news_report', '')}\nSentiment report: {state.get('sentiment_report', '')}\nFundamentals report: {state.get('fundamentals_report', '')}\nTrader proposal: {state.get('trader_investment_plan', '')}\nPortfolio decision: {pm_decision}"),
                 ])
                 if not isinstance(result, DirectionVote):
                     result = DirectionVote.model_validate(result, strict=True)
@@ -71,10 +71,10 @@ def create_consensus_node(config: dict):
             if not outcome.approved:
                 raise ValueError(outcome.reason)
 
-            pm_text = f"{pm_rating} {pm_decision}".lower()
+            normalized_rating = str(pm_rating).strip().lower()
             pm_direction = (
-                "bullish" if any(term in pm_text for term in ("buy", "overweight", "bullish", "long"))
-                else "bearish" if any(term in pm_text for term in ("sell", "underweight", "bearish", "short"))
+                "bullish" if normalized_rating in {"buy", "overweight"}
+                else "bearish" if normalized_rating in {"sell", "underweight"}
                 else None
             )
             if pm_direction != outcome.direction:
@@ -85,7 +85,7 @@ def create_consensus_node(config: dict):
             judge_llm = _client(config, judge_provider, judge_model)
             judge = judge_llm.with_structured_output(JudgeReview).invoke([
                 ("system", "You are a conservative veto-only reviewer. Approve only if the unanimous 3-model direction is logically supported by the supplied evidence, risks are addressed, and there are no material contradictions. You may veto but must never change the direction. Return strict structured output."),
-                ("human", f"Unanimous direction: {outcome.direction}\\nVotes: {votes}\\nRationales: {rationales}\\nPortfolio decision: {pm_decision}\\nReports: {state.get('market_report', '')}\\n{state.get('news_report', '')}\\n{state.get('sentiment_report', '')}\\n{state.get('fundamentals_report', '')}"),
+                ("human", f"Unanimous direction: {outcome.direction}\nVotes: {votes}\nRationales: {rationales}\nPortfolio decision: {pm_decision}\nReports: {state.get('market_report', '')}\n{state.get('news_report', '')}\n{state.get('sentiment_report', '')}\n{state.get('fundamentals_report', '')}"),
             ])
             if not isinstance(judge, JudgeReview):
                 judge = JudgeReview.model_validate(judge, strict=True)
@@ -102,7 +102,7 @@ def create_consensus_node(config: dict):
                 "judge_rationale": judge.rationale,
                 "portfolio_manager_original_decision": pm_decision,
                 "portfolio_manager_original_rating": pm_rating,
-                "final_trade_decision": f"CONSENSUS APPROVED — {label}\\n3/3 independent model votes; ChatGPT judge approved.\\nOriginal portfolio decision: {pm_decision}",
+                "final_trade_decision": f"CONSENSUS APPROVED — {label}\n3/3 independent model votes; ChatGPT judge approved.\nOriginal portfolio decision: {pm_decision}",
                 "final_rating": "Buy" if outcome.direction == "bullish" else "Sell",
             }
         except Exception as exc:
