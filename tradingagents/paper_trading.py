@@ -153,8 +153,8 @@ class PaperTradeLedger:
         )
         if requested is None or not result.approved or result.direction != requested:
             raise ValueError("paper entry blocked: the three model votes are not unanimous for this direction")
-        if not judge_approved:
-            raise ValueError("paper entry blocked: ChatGPT judge approval is required")
+        if judge_approved is not True:
+            raise ValueError("paper entry blocked: explicit boolean ChatGPT judge approval is required")
         normalized_votes = {name: model_votes.get(name) for name in MODEL_NAMES}
         return self.open_trade(
             symbol=symbol,
