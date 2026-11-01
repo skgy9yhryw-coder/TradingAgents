@@ -82,7 +82,7 @@ class TradingAgentsGraph:
 
         self.memory_log = TradingMemoryLog(self.config)
         # Separate SQLite ledger for hypothetical trades; it never contacts a broker.
-        self.paper_ledger = PaperTradeLedger(self.config["paper_trades_db_path"])
+        self.paper_ledger = PaperTradeLedger(self.config.get("paper_trades_db_path", os.path.join(self.config["data_cache_dir"], "paper_trades.sqlite3")))
 
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
@@ -120,6 +120,10 @@ class TradingAgentsGraph:
     def open_paper_trade(self, **trade):
         """Record a hypothetical trade in the local SQLite ledger; no order is sent."""
         return self.paper_ledger.open_trade(**trade)
+
+    def open_consensus_paper_trade(self, **trade):
+        """Open a paper trade only with unanimous Claude/Grok/DeepSeek votes and judge approval."""
+        return self.paper_ledger.open_consensus_trade(**trade)
 
     def close_paper_trade(self, trade_id: str, *, exit_price: float, fees: float = 0):
         """Close a hypothetical trade and calculate its net P&L."""
