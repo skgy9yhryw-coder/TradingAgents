@@ -68,6 +68,11 @@ def test_consensus_entry_requires_three_matching_votes_and_judge(tmp_path):
             symbol="ETH", direction="long", quantity=1, entry_price=100,
             model_votes=votes, judge_approved=False,
         )
+    with pytest.raises(ValueError, match="explicit boolean"):
+        ledger.open_consensus_trade(
+            symbol="ETH", direction="long", quantity=1, entry_price=100,
+            model_votes=votes, judge_approved="true",
+        )
     with pytest.raises(ValueError, match="not unanimous"):
         ledger.open_consensus_trade(
             symbol="ETH", direction="long", quantity=1, entry_price=100,
