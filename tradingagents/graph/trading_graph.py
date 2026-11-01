@@ -118,9 +118,12 @@ class TradingAgentsGraph:
         self._checkpointer_ctx = None
         self._resuming = False
 
-    def open_paper_trade(self, **trade):
-        """Record a hypothetical trade in the local SQLite ledger; no order is sent."""
-        return self.paper_ledger.open_trade(**trade)
+    def open_paper_trade(self, *, final_state: dict, **trade):
+        """Record a hypothetical trade only from an approved completed graph state.
+
+        Kept as the concise public entry point; it cannot bypass consensus.
+        """
+        return self.open_consensus_paper_trade(final_state=final_state, **trade)
 
     def open_consensus_paper_trade(self, *, final_state: dict, **trade):
         """Record a paper trade only from this graph's approved final analysis state."""
