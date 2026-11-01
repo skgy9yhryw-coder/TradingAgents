@@ -423,3 +423,39 @@ Please reference our work if you find *TradingAgents* provides you with some hel
       url={https://arxiv.org/abs/2412.20138}, 
 }
 ```
+
+## Paper-trade ledger
+
+The optional paper-trade ledger stores hypothetical entries and exits in a local
+SQLite database. It does not connect to an exchange or place orders. By default,
+the database is stored at `~/.tradingagents/paper_trades.sqlite3`; override it
+with `TRADINGAGENTS_PAPER_TRADES_DB_PATH`.
+
+Programmatic use:
+
+```python
+from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+graph = TradingAgentsGraph()
+trade_id = graph.open_paper_trade(
+    symbol="ETH",
+    direction="long",  # or "short"
+    quantity=0.1,
+    entry_price=2500.0,
+    stop_loss=2400.0,
+    take_profit=2700.0,
+    strategy="paper-only example",
+    news_context="Example context; replace with verified sources.",
+    model_votes={"claude": "bullish", "grok": "bullish", "deepseek": "bullish"},
+    judge_approved=False,
+)
+closed = graph.close_paper_trade(trade_id, exit_price=2600.0, fees=0.5)
+print(closed["pnl"])
+print(graph.paper_trade_performance())
+```
+
+Only call `open_paper_trade` after a paper-entry decision has been made and a
+market price has been independently verified. The example above demonstrates
+the API; it is not a market signal or a recommendation. Open trades are excluded
+from win-rate calculations until closed. The database is local to the machine
+running the application and is not automatically synced to GitHub.
