@@ -17,6 +17,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_tier_client, tier_provider
 from tradingagents.memory import TradingMemoryLog, settlement
 from tradingagents.memory.reflection import Reflector
+from tradingagents.paper_trading import PaperTradeLedger
 from tradingagents.reporting import write_report_tree
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -80,6 +81,8 @@ class TradingAgentsGraph:
         self.quick_thinking_llm = create_tier_client(self.config, "quick", **extra).get_llm()
 
         self.memory_log = TradingMemoryLog(self.config)
+        # Separate SQLite ledger for hypothetical trades; it never contacts a broker.
+        self.paper_ledger = PaperTradeLedger(self.config["paper_trades_db_path"])
 
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
@@ -113,6 +116,22 @@ class TradingAgentsGraph:
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
         self._resuming = False
+
+    def open_paper_trade(self, **trade):
+        """Record a hypothetical trade in the local SQLite ledger; no order is sent."""
+        return self.paper_ledger.open_trade(**trade)
+
+    def close_paper_trade(self, trade_id: str, *, exit_price: float, fees: float = 0):
+        """Close a hypothetical trade and calculate its net P&L."""
+        return self.paper_ledger.close_trade(trade_id, exit_price=exit_price, fees=fees)
+
+    def list_paper_trades(self, status: str | None = None):
+        """List saved paper trades; status may be 'open', 'closed', or None."""
+        return self.paper_ledger.list_trades(status=status)
+
+    def paper_trade_performance(self):
+        """Return win/loss counts and net P&L for closed paper trades only."""
+        return self.paper_ledger.performance()
 
     def resolve_instrument_context(self, ticker: str, asset_type: str = "stock",
                                    trade_date: str | None = None) -> str:
