@@ -91,3 +91,21 @@ def test_consensus_entry_direction_must_match_votes(tmp_path):
             model_votes={"claude": "bullish", "grok": "bullish", "deepseek": "bullish"},
             judge_approved=True,
         )
+
+@pytest.mark.parametrize("bad_price", [float("nan"), float("inf"), float("-inf")])
+def test_rejects_non_finite_prices(tmp_path, bad_price):
+    ledger = PaperTradeLedger(tmp_path / "paper.sqlite3")
+    with pytest.raises(ValueError, match="greater than zero"):
+        ledger.open_trade(
+            symbol="ETH", direction="long", quantity=1, entry_price=bad_price,
+        )
+
+
+def test_consensus_entry_rejects_unknown_direction(tmp_path):
+    ledger = PaperTradeLedger(tmp_path / "paper.sqlite3")
+    votes = {"claude": "bullish", "grok": "bullish", "deepseek": "bullish"}
+    with pytest.raises(ValueError, match="not unanimous"):
+        ledger.open_consensus_trade(
+            symbol="ETH", direction="sideways", quantity=1, entry_price=100,
+            model_votes=votes, judge_approved=True,
+        )
