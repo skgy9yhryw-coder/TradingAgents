@@ -122,9 +122,28 @@ class TradingAgentsGraph:
         """Record a hypothetical trade in the local SQLite ledger; no order is sent."""
         return self.paper_ledger.open_trade(**trade)
 
-    def open_consensus_paper_trade(self, **trade):
-        """Open a paper trade only with unanimous Claude/Grok/DeepSeek votes and judge approval."""
-        return self.paper_ledger.open_consensus_trade(**trade)
+    def open_consensus_paper_trade(self, *, final_state: dict, **trade):
+        """Record a paper trade only from this graph's approved final analysis state."""
+        if not isinstance(final_state, dict):
+            raise TypeError("final_state must be the completed graph state")
+        if final_state.get("consensus_status") != "approved":
+            raise ValueError("paper entry blocked: graph consensus status is not approved")
+        if final_state.get("judge_approved") is not True:
+            raise ValueError("paper entry blocked: explicit judge approval is missing")
+        votes = final_state.get("consensus_votes")
+        direction = final_state.get("consensus_direction")
+        rating = str(final_state.get("final_rating", "")).strip().lower()
+        expected_rating = "buy" if direction == "bullish" else "sell" if direction == "bearish" else None
+        if expected_rating is None or rating != expected_rating:
+            raise ValueError("paper entry blocked: final graph direction/rating mismatch")
+        if trade.get("direction") not in (("long", "bullish", "buy") if direction == "bullish" else ("short", "bearish", "sell")):
+            raise ValueError("paper entry blocked: requested trade direction differs from graph consensus")
+        return self.paper_ledger.open_consensus_trade(
+            model_votes=votes,
+            judge_approved=True,
+            judge_rationale=final_state.get("judge_rationale", ""),
+            **trade,
+        )
 
     def close_paper_trade(self, trade_id: str, *, exit_price: float, fees: float = 0):
         """Close a hypothetical trade and calculate its net P&L."""
