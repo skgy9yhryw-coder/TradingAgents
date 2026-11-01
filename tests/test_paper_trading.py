@@ -59,3 +59,35 @@ def test_unknown_or_already_closed_trade_cannot_be_closed(tmp_path):
     ledger.close_trade(trade_id, exit_price=101)
     with pytest.raises(ValueError):
         ledger.close_trade(trade_id, exit_price=102)
+
+def test_consensus_entry_requires_three_matching_votes_and_judge(tmp_path):
+    ledger = PaperTradeLedger(tmp_path / "paper.sqlite3")
+    votes = {"claude": "bullish", "grok": "bullish", "deepseek": "bullish"}
+    with pytest.raises(ValueError, match="judge approval"):
+        ledger.open_consensus_trade(
+            symbol="ETH", direction="long", quantity=1, entry_price=100,
+            model_votes=votes, judge_approved=False,
+        )
+    with pytest.raises(ValueError, match="not unanimous"):
+        ledger.open_consensus_trade(
+            symbol="ETH", direction="long", quantity=1, entry_price=100,
+            model_votes={**votes, "deepseek": "bearish"}, judge_approved=True,
+        )
+    trade_id = ledger.open_consensus_trade(
+        symbol="ETH", direction="long", quantity=1, entry_price=100,
+        model_votes=votes, judge_approved=True, judge_rationale="Approved for paper test",
+    )
+    trade = ledger.list_trades(status="open")[0]
+    assert trade["trade_id"] == trade_id
+    assert trade["judge_approved"] == 1
+    assert '"approval_gate": "3_of_3_plus_judge"' in trade["metadata"]
+
+
+def test_consensus_entry_direction_must_match_votes(tmp_path):
+    ledger = PaperTradeLedger(tmp_path / "paper.sqlite3")
+    with pytest.raises(ValueError, match="not unanimous"):
+        ledger.open_consensus_trade(
+            symbol="ETH", direction="short", quantity=1, entry_price=100,
+            model_votes={"claude": "bullish", "grok": "bullish", "deepseek": "bullish"},
+            judge_approved=True,
+        )
