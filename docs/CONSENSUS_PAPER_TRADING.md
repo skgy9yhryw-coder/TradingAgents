@@ -4,7 +4,7 @@ This feature is a research and record-keeping workflow. It does **not** place or
 
 ## Approval policy
 
-A directional paper entry should be recorded through `TradingAgentsGraph.open_consensus_paper_trade()` (or `PaperTradeLedger.open_consensus_trade()`), not the unrestricted low-level ledger method.
+A directional paper entry through the graph must use `TradingAgentsGraph.open_paper_trade(final_state=...)` or `TradingAgentsGraph.open_consensus_paper_trade(final_state=...)`. Both require the completed graph state and enforce the approval checks.
 
 An entry is accepted only when all of the following hold:
 
@@ -15,7 +15,7 @@ An entry is accepted only when all of the following hold:
 
 A missing model, malformed response, provider/authentication error, neutral vote, disagreement, Portfolio Manager mismatch, or judge veto produces **NO TRADE / REVIEW**.
 
-The low-level `open_paper_trade()` / `PaperTradeLedger.open_trade()` methods are deliberately general-purpose ledger primitives. They do not verify model consensus and must not be used as an approval workflow.
+The lower-level `PaperTradeLedger.open_trade()` and `PaperTradeLedger.open_consensus_trade()` methods remain implementation primitives for direct ledger users; they cannot prove that a supplied state came from the completed graph or that a judge actually ran. Do not expose or use them as a substitute for the graph approval workflow. The graph's public `open_paper_trade()` entry point requires `final_state` and delegates to the guarded consensus path.
 
 ## Configure the four model IDs
 
