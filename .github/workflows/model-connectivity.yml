@@ -33,62 +33,82 @@ jobs:
 
           checks = []
 
-          def post(label, url, key, payload, headers=None):
+          def safe_detail(value, key):
+              text = str(value).replace(key, "[REDACTED]")
+              text = " ".join(text.split())
+              return text[:240] or "provider did not supply a message"
+
+          def provider_error(body, key):
+              try:
+                  data = json.loads(body.decode("utf-8", errors="replace"))
+                  error = data.get("error", data)
+                  if isinstance(error, dict):
+                      parts = [error.get(name) for name in ("type", "code", "message")]
+                      detail = " | ".join(str(part) for part in parts if part)
+                      return safe_detail(detail, key) if detail else "provider error details unavailable"
+                  if isinstance(error, str):
+                      return safe_detail(error, key)
+              except (ValueError, TypeError):
+                  pass
+              return "provider error details unavailable"
+
+          def post(label, url, key, payload, auth_headers):
               if not key:
                   checks.append((label, "SKIPPED (missing GitHub Actions secret)"))
                   return
-              request_headers = {
-                  "Authorization": f"Bearer {key}",
-                  "Content-Type": "application/json",
-              }
-              if headers:
-                  request_headers.update(headers)
-              request = urllib.request.Request(
-                  url,
-                  data=json.dumps(payload).encode(),
-                  headers=request_headers,
-                  method="POST",
-              )
+              if key != key.strip() or "\r" in key or "\n" in key:
+                  checks.append((label, "FAIL (API key has leading/trailing whitespace or a newline)"))
+                  return
               try:
+                  request_headers = {"Content-Type": "application/json", **auth_headers(key)}
+                  request = urllib.request.Request(
+                      url,
+                      data=json.dumps(payload).encode("utf-8"),
+                      headers=request_headers,
+                      method="POST",
+                  )
                   with urllib.request.urlopen(request, timeout=25) as response:
-                      checks.append((label, "PASS" if 200 <= response.status < 300 else f"HTTP {response.status}"))
+                      checks.append((label, "PASS" if 200 <= response.status < 300 else f"FAIL (HTTP {response.status})"))
               except urllib.error.HTTPError as error:
-                  checks.append((label, f"FAIL (HTTP {error.code})"))
+                  detail = provider_error(error.read(4096), key)
+                  checks.append((label, f"FAIL (HTTP {error.code}: {detail})"))
               except Exception as error:
-                  checks.append((label, f"FAIL ({type(error).__name__})"))
+                  checks.append((label, f"FAIL ({type(error).__name__}: {safe_detail(error, key)})"))
 
           post(
               "Anthropic / Claude",
               "https://api.anthropic.com/v1/messages",
-              os.getenv("ANTHROPIC_API_KEY"),
+              os.getenv("ANTHROPIC_API_KEY", ""),
               {"model": os.environ["CLAUDE_MODEL"], "max_tokens": 8,
                "messages": [{"role": "user", "content": "Reply OK"}]},
-              {"x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
-               "anthropic-version": "2023-06-01"},
+              lambda key: {"x-api-key": key, "anthropic-version": "2023-06-01"},
           )
           post(
               "xAI / Grok",
               "https://api.x.ai/v1/chat/completions",
-              os.getenv("XAI_API_KEY"),
+              os.getenv("XAI_API_KEY", ""),
               {"model": os.environ["GROK_MODEL"], "max_tokens": 8,
                "messages": [{"role": "user", "content": "Reply OK"}]},
+              lambda key: {"Authorization": f"Bearer {key}"},
           )
           post(
               "DeepSeek",
               "https://api.deepseek.com/chat/completions",
-              os.getenv("DEEPSEEK_API_KEY"),
+              os.getenv("DEEPSEEK_API_KEY", ""),
               {"model": os.environ["DEEPSEEK_MODEL"], "max_tokens": 8,
                "messages": [{"role": "user", "content": "Reply OK"}]},
+              lambda key: {"Authorization": f"Bearer {key}"},
           )
           post(
               "OpenAI / ChatGPT Judge",
               "https://api.openai.com/v1/chat/completions",
-              os.getenv("OPENAI_API_KEY"),
+              os.getenv("OPENAI_API_KEY", ""),
               {"model": os.environ["JUDGE_MODEL"], "max_tokens": 8,
                "messages": [{"role": "user", "content": "Reply OK"}]},
+              lambda key: {"Authorization": f"Bearer {key}"},
           )
 
-          print("Model connectivity results (credentials and response bodies are never printed):")
+          print("Model connectivity results (API keys are never printed):")
           for label, result in checks:
               print(f"- {label}: {result}")
           if any(result.startswith("FAIL") for _, result in checks):
