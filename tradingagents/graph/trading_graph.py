@@ -82,7 +82,7 @@ class TradingAgentsGraph:
 
         self.memory_log = TradingMemoryLog(self.config)
         # Separate SQLite ledger for hypothetical trades; it never contacts a broker.
-        self.paper_ledger = PaperTradeLedger(self.config.get("paper_trades_db_path", os.path.join(self.config["data_cache_dir"], "paper_trades.sqlite3")))
+        self._paper_ledger = PaperTradeLedger(self.config.get("paper_trades_db_path", os.path.join(self.config["data_cache_dir"], "paper_trades.sqlite3")))
 
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
@@ -141,7 +141,7 @@ class TradingAgentsGraph:
             raise ValueError("paper entry blocked: final graph direction/rating mismatch")
         if trade.get("direction") not in (("long", "bullish", "buy") if direction == "bullish" else ("short", "bearish", "sell")):
             raise ValueError("paper entry blocked: requested trade direction differs from graph consensus")
-        return self.paper_ledger.open_consensus_trade(
+        return self._paper_ledger.open_consensus_trade(
             model_votes=votes,
             judge_approved=True,
             judge_rationale=final_state.get("judge_rationale", ""),
@@ -150,15 +150,15 @@ class TradingAgentsGraph:
 
     def close_paper_trade(self, trade_id: str, *, exit_price: float, fees: float = 0):
         """Close a hypothetical trade and calculate its net P&L."""
-        return self.paper_ledger.close_trade(trade_id, exit_price=exit_price, fees=fees)
+        return self._paper_ledger.close_trade(trade_id, exit_price=exit_price, fees=fees)
 
     def list_paper_trades(self, status: str | None = None):
         """List saved paper trades; status may be 'open', 'closed', or None."""
-        return self.paper_ledger.list_trades(status=status)
+        return self._paper_ledger.list_trades(status=status)
 
     def paper_trade_performance(self):
         """Return win/loss counts and net P&L for closed paper trades only."""
-        return self.paper_ledger.performance()
+        return self._paper_ledger.performance()
 
     def resolve_instrument_context(self, ticker: str, asset_type: str = "stock",
                                    trade_date: str | None = None) -> str:
