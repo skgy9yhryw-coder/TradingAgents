@@ -71,3 +71,13 @@ class AgentState(MessagesState):
     past_context: Annotated[str, "Memory log context for the Portfolio Manager (same-ticker decisions + cross-ticker lessons), written by the Memory Log step"]
     memory_note: Annotated[str, "What the Memory Log step could not settle or read this run, for the report; empty when all went well"]
     portfolio_context: Annotated[str, "Caller-supplied holdings and cash, rendered at run start; empty when not provided"]
+
+    # Independent-model consensus and veto-only judge audit trail.
+    consensus_votes: dict[str, str | None]
+    consensus_rationales: dict[str, str]
+    consensus_status: str
+    consensus_direction: str | None
+    judge_approved: bool
+    judge_rationale: str
+    portfolio_manager_original_decision: str
+    portfolio_manager_original_rating: str

@@ -17,6 +17,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_tier_client, tier_provider
 from tradingagents.memory import TradingMemoryLog, settlement
 from tradingagents.memory.reflection import Reflector
+from tradingagents.paper_trading import PaperTradeLedger
 from tradingagents.reporting import write_report_tree
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -80,6 +81,8 @@ class TradingAgentsGraph:
         self.quick_thinking_llm = create_tier_client(self.config, "quick", **extra).get_llm()
 
         self.memory_log = TradingMemoryLog(self.config)
+        # Separate SQLite ledger for hypothetical trades; it never contacts a broker.
+        self._paper_ledger = PaperTradeLedger(self.config.get("paper_trades_db_path", os.path.join(self.config["data_cache_dir"], "paper_trades.sqlite3")))
 
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
@@ -98,6 +101,7 @@ class TradingAgentsGraph:
             self.deep_thinking_llm,
             self.conditional_logic,
             max_tool_rounds,
+            config=self.config,
         )
 
         self.propagator = Propagator(
@@ -113,6 +117,48 @@ class TradingAgentsGraph:
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
         self._resuming = False
+
+    def open_paper_trade(self, *, final_state: dict, **trade):
+        """Record a hypothetical trade only from an approved completed graph state.
+
+        Kept as the concise public entry point; it cannot bypass consensus.
+        """
+        return self.open_consensus_paper_trade(final_state=final_state, **trade)
+
+    def open_consensus_paper_trade(self, *, final_state: dict, **trade):
+        """Record a paper trade only from this graph's approved final analysis state."""
+        if not isinstance(final_state, dict):
+            raise TypeError("final_state must be the completed graph state")
+        if final_state.get("consensus_status") != "approved":
+            raise ValueError("paper entry blocked: graph consensus status is not approved")
+        if final_state.get("judge_approved") is not True:
+            raise ValueError("paper entry blocked: explicit judge approval is missing")
+        votes = final_state.get("consensus_votes")
+        direction = final_state.get("consensus_direction")
+        rating = str(final_state.get("final_rating", "")).strip().lower()
+        expected_rating = "buy" if direction == "bullish" else "sell" if direction == "bearish" else None
+        if expected_rating is None or rating != expected_rating:
+            raise ValueError("paper entry blocked: final graph direction/rating mismatch")
+        if trade.get("direction") not in (("long", "bullish", "buy") if direction == "bullish" else ("short", "bearish", "sell")):
+            raise ValueError("paper entry blocked: requested trade direction differs from graph consensus")
+        return self._paper_ledger.open_consensus_trade(
+            model_votes=votes,
+            judge_approved=True,
+            judge_rationale=final_state.get("judge_rationale", ""),
+            **trade,
+        )
+
+    def close_paper_trade(self, trade_id: str, *, exit_price: float, fees: float = 0):
+        """Close a hypothetical trade and calculate its net P&L."""
+        return self._paper_ledger.close_trade(trade_id, exit_price=exit_price, fees=fees)
+
+    def list_paper_trades(self, status: str | None = None):
+        """List saved paper trades; status may be 'open', 'closed', or None."""
+        return self._paper_ledger.list_trades(status=status)
+
+    def paper_trade_performance(self):
+        """Return win/loss counts and net P&L for closed paper trades only."""
+        return self._paper_ledger.performance()
 
     def resolve_instrument_context(self, ticker: str, asset_type: str = "stock",
                                    trade_date: str | None = None) -> str:
@@ -266,6 +312,14 @@ class TradingAgentsGraph:
             "deep_think_llm": cfg.get("deep_think_llm"),
             "quick_think_provider": tier_provider(cfg, "quick") if cfg.get("llm_provider") else None,
             "quick_think_llm": cfg.get("quick_think_llm"),
+            "consensus_claude_provider": cfg.get("consensus_claude_provider"),
+            "consensus_claude_model": cfg.get("consensus_claude_model"),
+            "consensus_grok_provider": cfg.get("consensus_grok_provider"),
+            "consensus_grok_model": cfg.get("consensus_grok_model"),
+            "consensus_deepseek_provider": cfg.get("consensus_deepseek_provider"),
+            "consensus_deepseek_model": cfg.get("consensus_deepseek_model"),
+            "consensus_judge_provider": cfg.get("consensus_judge_provider"),
+            "consensus_judge_model": cfg.get("consensus_judge_model"),
             "analysts": list(self.selected_analysts),
             "max_debate_rounds": cfg.get("max_debate_rounds"),
             "max_risk_discuss_rounds": cfg.get("max_risk_discuss_rounds"),
@@ -462,6 +516,14 @@ class TradingAgentsGraph:
             "investment_plan": final_state["investment_plan"],
             "final_trade_decision": final_state["final_trade_decision"],
             "final_rating": run_rating(final_state),
+            "consensus_votes": final_state.get("consensus_votes", {}),
+            "consensus_rationales": final_state.get("consensus_rationales", {}),
+            "consensus_status": final_state.get("consensus_status", "not_run"),
+            "consensus_direction": final_state.get("consensus_direction"),
+            "judge_approved": final_state.get("judge_approved", False),
+            "judge_rationale": final_state.get("judge_rationale", ""),
+            "portfolio_manager_original_decision": final_state.get("portfolio_manager_original_decision", ""),
+            "portfolio_manager_original_rating": final_state.get("portfolio_manager_original_rating", ""),
             "run_settings": self.run_settings(),
         }
 
