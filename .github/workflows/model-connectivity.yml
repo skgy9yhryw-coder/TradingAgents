@@ -1,0 +1,102 @@
+name: Model connectivity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  connectivity:
+    name: API connectivity (no trading)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CLAUDE_MODEL: ${{ vars.TRADINGAGENTS_CONSENSUS_CLAUDE_MODEL || 'claude-sonnet-4-5' }}
+      GROK_MODEL: ${{ vars.TRADINGAGENTS_CONSENSUS_GROK_MODEL || 'grok-3-mini' }}
+      DEEPSEEK_MODEL: ${{ vars.TRADINGAGENTS_CONSENSUS_DEEPSEEK_MODEL || 'deepseek-chat' }}
+      JUDGE_MODEL: ${{ vars.TRADINGAGENTS_CONSENSUS_JUDGE_MODEL || 'gpt-4.1-mini' }}
+    steps:
+      - name: Check provider API access
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          checks = []
+
+          def post(label, url, key, payload, headers=None):
+              if not key:
+                  checks.append((label, "SKIPPED (missing GitHub Actions secret)"))
+                  return
+              request_headers = {
+                  "Authorization": f"Bearer {key}",
+                  "Content-Type": "application/json",
+              }
+              if headers:
+                  request_headers.update(headers)
+              request = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode(),
+                  headers=request_headers,
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=25) as response:
+                      checks.append((label, "PASS" if 200 <= response.status < 300 else f"HTTP {response.status}"))
+              except urllib.error.HTTPError as error:
+                  checks.append((label, f"FAIL (HTTP {error.code})"))
+              except Exception as error:
+                  checks.append((label, f"FAIL ({type(error).__name__})"))
+
+          post(
+              "Anthropic / Claude",
+              "https://api.anthropic.com/v1/messages",
+              os.getenv("ANTHROPIC_API_KEY"),
+              {"model": os.environ["CLAUDE_MODEL"], "max_tokens": 8,
+               "messages": [{"role": "user", "content": "Reply OK"}]},
+              {"x-api-key": os.getenv("ANTHROPIC_API_KEY", ""),
+               "anthropic-version": "2023-06-01"},
+          )
+          post(
+              "xAI / Grok",
+              "https://api.x.ai/v1/chat/completions",
+              os.getenv("XAI_API_KEY"),
+              {"model": os.environ["GROK_MODEL"], "max_tokens": 8,
+               "messages": [{"role": "user", "content": "Reply OK"}]},
+          )
+          post(
+              "DeepSeek",
+              "https://api.deepseek.com/chat/completions",
+              os.getenv("DEEPSEEK_API_KEY"),
+              {"model": os.environ["DEEPSEEK_MODEL"], "max_tokens": 8,
+               "messages": [{"role": "user", "content": "Reply OK"}]},
+          )
+          post(
+              "OpenAI / ChatGPT Judge",
+              "https://api.openai.com/v1/chat/completions",
+              os.getenv("OPENAI_API_KEY"),
+              {"model": os.environ["JUDGE_MODEL"], "max_tokens": 8,
+               "messages": [{"role": "user", "content": "Reply OK"}]},
+          )
+
+          print("Model connectivity results (credentials and response bodies are never printed):")
+          for label, result in checks:
+              print(f"- {label}: {result}")
+          if any(result.startswith("FAIL") for _, result in checks):
+              sys.exit(1)
+          if not any(result == "PASS" for _, result in checks):
+              print("No provider was tested; configure the required secrets.")
+              sys.exit(1)
+          if any(result.startswith("SKIPPED") for _, result in checks):
+              print("Some providers were skipped. Configure all four secrets for a complete check.")
+              sys.exit(1)
+          PY
